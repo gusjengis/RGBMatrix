@@ -11,8 +11,11 @@
 // On the Mega, this library uses fixed RGB data pins 24 through 29.
 RGBmatrixPanel matrix(A, B, C, D, CLK, LAT, OE, false, 64);
 
-static const int16_t textWidth = 13 * 6;
-static int16_t textX = 64;
+static const uint8_t COLUMNS = 10;
+static const uint8_t ROWS = 4;
+static const uint8_t TEXT_CAPACITY = 160;
+static char text[TEXT_CAPACITY];
+static uint8_t textLength = 0;
 
 static void writePanelRegister(const uint8_t config[16], uint8_t latchClocks) {
   for (uint8_t column = 0; column < 64; ++column) {
@@ -51,28 +54,81 @@ static void initializePanelDriver() {
   writePanelRegister(register13, 13);
 }
 
+static void drawText() {
+  char lines[ROWS][COLUMNS + 1] = {};
+  uint8_t line = 0;
+  uint8_t column = 0;
+
+  for (uint8_t i = 0; i < textLength; ++i) {
+    if (text[i] == '\n') {
+      ++line;
+      column = 0;
+      memset(lines[line % ROWS], 0, COLUMNS + 1);
+      continue;
+    }
+
+    lines[line % ROWS][column++] = text[i];
+    if (column == COLUMNS) {
+      ++line;
+      column = 0;
+      memset(lines[line % ROWS], 0, COLUMNS + 1);
+    }
+  }
+
+  const uint8_t firstLine = line >= ROWS ? line - ROWS + 1 : 0;
+  matrix.fillScreen(0);
+  for (uint8_t row = 0; row < ROWS && firstLine + row <= line; ++row) {
+    matrix.setCursor(0, row * 8);
+    matrix.print(lines[(firstLine + row) % ROWS]);
+  }
+}
+
+static void appendCharacter(char character) {
+  if (textLength == TEXT_CAPACITY) {
+    memmove(text, text + 1, TEXT_CAPACITY - 1);
+    --textLength;
+  }
+  text[textLength++] = character;
+}
+
+static bool processSerialInput(char character) {
+  if (character == '\b' || character == 0x7f) {
+    if (textLength > 0) {
+      --textLength;
+      return true;
+    }
+    return false;
+  }
+  if (character == '\r' || character == '\n') {
+    appendCharacter('\n');
+    return true;
+  }
+  if (character >= ' ' && character <= '~') {
+    appendCharacter(character);
+    return true;
+  }
+  return false;
+}
+
 void setup() {
   initializePanelDriver();
   matrix.begin();
   matrix.setTextSize(1);
   matrix.setTextWrap(false);
   matrix.setTextColor(matrix.Color333(1, 1, 1));
+  drawText();
+
+  Serial.begin(115200);
+  Serial.println(F("RGBMatrix ready"));
 }
 
 void loop() {
-  matrix.fillScreen(matrix.Color333(0, 0, 0));
-  matrix.setCursor(textX, 0);
-  matrix.print(F("Hello, world!"));
-  matrix.setCursor(textX, 8);
-  matrix.print(F("Hello, world!"));
-  matrix.setCursor(textX, 16);
-  matrix.print(F("Hello, world!"));
-  matrix.setCursor(textX, 24);
-  matrix.print(F("Hello, world!"));
-
-  if (--textX < -textWidth) {
-    textX = matrix.width();
+  bool changed = false;
+  while (Serial.available() > 0) {
+    changed |= processSerialInput(Serial.read());
   }
 
-  // delay(50);
+  if (changed) {
+    drawText();
+  }
 }

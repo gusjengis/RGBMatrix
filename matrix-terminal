@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+
+import argparse
+import glob
+import os
+import select
+import sys
+import termios
+import time
+import tty
+
+
+BAUD_RATE = termios.B115200
+PORT_PATTERNS = (
+    "/dev/ttyACM*",
+    "/dev/ttyUSB*",
+    "/dev/cu.usbmodem*",
+    "/dev/cu.usbserial*",
+)
+
+
+def detect_port():
+    ports = sorted({port for pattern in PORT_PATTERNS for port in glob.glob(pattern)})
+    if not ports:
+        raise RuntimeError("no USB serial port found; pass one explicitly")
+    if len(ports) > 1:
+        choices = "\n  ".join(ports)
+        raise RuntimeError(f"multiple serial ports found; choose one:\n  {choices}")
+    return ports[0]
+
+
+def configure_serial(file_descriptor):
+    attributes = termios.tcgetattr(file_descriptor)
+    attributes[0] = termios.IGNPAR
+    attributes[1] = 0
+    attributes[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+    attributes[3] = 0
+    attributes[4] = BAUD_RATE
+    attributes[5] = BAUD_RATE
+    attributes[6][termios.VMIN] = 1
+    attributes[6][termios.VTIME] = 0
+    termios.tcsetattr(file_descriptor, termios.TCSANOW, attributes)
+
+
+def discard_escape_sequence(stdin_fd):
+    while select.select([stdin_fd], [], [], 0.02)[0]:
+        character = os.read(stdin_fd, 1)
+        if character.isalpha() or character == b"~":
+            break
+
+
+def run(port):
+    serial_fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    try:
+        configure_serial(serial_fd)
+        os.set_blocking(serial_fd, True)
+
+        # Opening a Mega's serial port resets it. Let its bootloader and setup run.
+        time.sleep(2)
+        termios.tcflush(serial_fd, termios.TCIOFLUSH)
+
+        stdin_fd = sys.stdin.fileno()
+        original_terminal = termios.tcgetattr(stdin_fd)
+        print(f"Connected to {port}. Type text; Ctrl-C or Ctrl-D exits.")
+        try:
+            tty.setraw(stdin_fd)
+            previous_was_cr = False
+            while True:
+                character = os.read(stdin_fd, 1)
+                if character in (b"\x03", b"\x04"):
+                    break
+                if character == b"\x1b":
+                    discard_escape_sequence(stdin_fd)
+                    continue
+                if character in (b"\x08", b"\x7f"):
+                    os.write(serial_fd, b"\x08")
+                    previous_was_cr = False
+                elif character == b"\r":
+                    os.write(serial_fd, b"\n")
+                    previous_was_cr = True
+                elif character == b"\n":
+                    if not previous_was_cr:
+                        os.write(serial_fd, b"\n")
+                    previous_was_cr = False
+                elif b" " <= character <= b"~":
+                    os.write(serial_fd, character)
+                    previous_was_cr = False
+        finally:
+            termios.tcsetattr(stdin_fd, termios.TCSADRAIN, original_terminal)
+            print()
+    finally:
+        os.close(serial_fd)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Type terminal input onto the RGB matrix."
+    )
+    parser.add_argument("port", nargs="?", help="serial port, such as /dev/ttyACM0")
+    arguments = parser.parse_args()
+
+    try:
+        run(arguments.port or detect_port())
+    except (OSError, RuntimeError) as error:
+        parser.exit(1, f"matrix-terminal: {error}\n")
+
+
+if __name__ == "__main__":
+    main()

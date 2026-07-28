@@ -23,6 +23,7 @@
             packages = with pkgs; [
               arduino-cli
               jq
+              python3
               shellcheck
             ];
 
