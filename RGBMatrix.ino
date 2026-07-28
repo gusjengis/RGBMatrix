@@ -11,6 +11,9 @@
 // On the Mega, this library uses fixed RGB data pins 24 through 29.
 RGBmatrixPanel matrix(A, B, C, D, CLK, LAT, OE, false, 64);
 
+static const int16_t textWidth = 13 * 6;
+static int16_t textX = 64;
+
 static void writePanelRegister(const uint8_t config[16], uint8_t latchClocks) {
   for (uint8_t column = 0; column < 64; ++column) {
     const uint8_t data = config[column & 0x0f] ? HIGH : LOW;
@@ -51,36 +54,25 @@ static void initializePanelDriver() {
 void setup() {
   initializePanelDriver();
   matrix.begin();
-  // matrix.fillScreen(matrix.Color333(0, 0, 0));
-  // for (uint8_t x = 0; x < 8; ++x) {
-  //   for (uint8_t y = 0; y < 8; ++y) {
-  //     matrix.drawPixel(x, y,
-  //                      // matrix.Color333(max(x - y, 0), max(7 - (y + x), 0),
-  //                      // max(x - y, 0)));
-  //                      matrix.Color333(0, 0, max(x - y, 0)));
-  //   }
-  // }
+  matrix.setTextSize(1);
+  matrix.setTextWrap(false);
+  matrix.setTextColor(matrix.Color333(1, 1, 1));
 }
 
 void loop() {
-  for (int16_t x = 0; x < 96; ++x) {
-    // matrix.fillScreen(matrix.Color333(0, 0, 0));
-    // matrix.drawRect(x - 2, 0, 1, 32, matrix.Color333(0, 0, 0));
-    drawThing(x);
-    int16_t z = x - 32;
-    int16_t y = 12 + int16_t(sin(z / 5.0) * 8.0);
-    matrix.drawRect(z, y, 1, 6, matrix.Color333(0, 0, 0));
-    delay(1);
+  matrix.fillScreen(matrix.Color333(0, 0, 0));
+  matrix.setCursor(textX, 0);
+  matrix.print(F("Hello, world!"));
+  matrix.setCursor(textX, 8);
+  matrix.print(F("Hello, world!"));
+  matrix.setCursor(textX, 16);
+  matrix.print(F("Hello, world!"));
+  matrix.setCursor(textX, 24);
+  matrix.print(F("Hello, world!"));
+
+  if (--textX < -textWidth) {
+    textX = matrix.width();
   }
 
-  delay(4000);
-}
-
-void drawThing(int16_t x) {
-  // if (x >= 0 && x < 64) {
-  int16_t y = 12 + int16_t(sin(x / 5.0) * 8.0);
-  matrix.drawRect(x, y, 1, 2, matrix.Color333(1, 0, 0));
-  matrix.drawRect(x, y + 2, 1, 2, matrix.Color333(0, 1, 0));
-  matrix.drawRect(x, y + 4, 1, 2, matrix.Color333(0, 0, 1));
-  // }
+  // delay(50);
 }
