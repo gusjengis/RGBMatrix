@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+FQBN=arduino:avr:mega
+CORE_ID=arduino:avr
+CORE_VERSION=1.8.8
+BUSIO_VERSION=1.17.4
+GFX_VERSION=1.12.6
+MATRIX_VERSION=1.1.9
+BUILD_DIR="$ROOT/build"
+
+if [[ ${RGBMATRIX_NIX_SHELL:-} != 1 ]]; then
+  cd "$ROOT"
+  exec nix develop "path:$ROOT" -c env RGBMATRIX_NIX_SHELL=1 "$ROOT/arduino" "$@"
+fi
+
+cd "$ROOT"
+
+usage() {
+  cat <<'EOF'
+Usage: ./arduino <command>
+
+Commands:
+  setup    Install pinned board core and display libraries
+  build    Clean-build sketch with useful compiler warnings enabled
+  upload   Build, find connected Mega, upload, and verify
+  boards   List connected Arduino boards
+  clean    Remove generated build artifacts
+
+Set PORT to override automatic port detection:
+  PORT=/dev/ttyACM1 ./arduino upload
+EOF
+}
+
+library_is_installed() {
+  local libraries_json=$1
+  local name=$2
+  local version=$3
+
+  jq -e --arg name "$name" --arg version "$version" \
+    '.installed_libraries | any(.library.name == $name and .library.version == $version)' \
+    <<<"$libraries_json" >/dev/null
+}
+
+require_setup() {
+  local core_json libraries_json
+
+  core_json=$(arduino-cli core list --json)
+  if ! jq -e --arg id "$CORE_ID" --arg version "$CORE_VERSION" \
+    'any(.platforms[]?; .id == $id and .installed_version == $version)' \
+    <<<"$core_json" >/dev/null; then
+    printf 'Missing %s@%s. Run ./arduino setup.\n' "$CORE_ID" "$CORE_VERSION" >&2
+    exit 1
+  fi
+
+  libraries_json=$(arduino-cli lib list --json)
+  if ! library_is_installed "$libraries_json" "Adafruit BusIO" "$BUSIO_VERSION" ||
+     ! library_is_installed "$libraries_json" "Adafruit GFX Library" "$GFX_VERSION" ||
+     ! library_is_installed "$libraries_json" "RGB matrix Panel" "$MATRIX_VERSION"; then
+    printf 'Missing pinned display libraries. Run ./arduino setup.\n' >&2
+    exit 1
+  fi
+}
+
+setup() {
+  arduino-cli core update-index
+  arduino-cli lib update-index
+  arduino-cli core install "$CORE_ID@$CORE_VERSION"
+  arduino-cli lib install --no-deps \
+    "Adafruit BusIO@$BUSIO_VERSION" \
+    "Adafruit GFX Library@$GFX_VERSION" \
+    "RGB matrix Panel@$MATRIX_VERSION"
+}
+
+build() {
+  require_setup
+  arduino-cli compile \
+    --fqbn "$FQBN" \
+    --warnings more \
+    --clean \
+    --output-dir "$BUILD_DIR" \
+    "$ROOT"
+}
+
+detect_port() {
+  local board_json
+  local -a ports
+
+  if [[ -n ${PORT:-} ]]; then
+    printf '%s\n' "$PORT"
+    return
+  fi
+
+  board_json=$(arduino-cli board list --json)
+  mapfile -t ports < <(
+    jq -r --arg fqbn "$FQBN" '
+      .detected_ports[]
+      | select(any(.matching_boards[]?; .fqbn == $fqbn))
+      | .port.address
+    ' <<<"$board_json"
+  )
+
+  if (( ${#ports[@]} == 0 )); then
+    printf 'No connected %s board found. Run ./arduino boards.\n' "$FQBN" >&2
+    exit 1
+  fi
+  if (( ${#ports[@]} > 1 )); then
+    printf 'Multiple %s boards found; set PORT explicitly:\n' "$FQBN" >&2
+    printf '  %s\n' "${ports[@]}" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "${ports[0]}"
+}
+
+upload() {
+  local port
+
+  build
+  port=$(detect_port)
+  printf 'Uploading to %s\n' "$port"
+  arduino-cli upload \
+    --fqbn "$FQBN" \
+    --port "$port" \
+    --input-dir "$BUILD_DIR" \
+    --verify \
+    "$ROOT"
+}
+
+case ${1:-help} in
+  setup)
+    setup
+    ;;
+  build)
+    build
+    ;;
+  upload)
+    upload
+    ;;
+  boards)
+    arduino-cli board list
+    ;;
+  clean)
+    rm -rf -- "$BUILD_DIR"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    printf 'Unknown command: %s\n\n' "$1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

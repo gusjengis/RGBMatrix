@@ -20,7 +20,17 @@
         in
         {
           default = pkgs.mkShell {
-            packages = [ pkgs.arduino-cli ];
+            packages = with pkgs; [
+              arduino-cli
+              jq
+              shellcheck
+            ];
+
+            shellHook = ''
+              export ARDUINO_DIRECTORIES_DATA="$PWD/.arduino/data"
+              export ARDUINO_DIRECTORIES_DOWNLOADS="$PWD/.arduino/downloads"
+              export ARDUINO_DIRECTORIES_USER="$PWD/.arduino/user"
+            '';
           };
         });
     };

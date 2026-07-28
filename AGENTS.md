@@ -1,12 +1,23 @@
 # Project Instructions
 
-Use the repository Nix flake for all Arduino CLI operations. Do not depend on a globally installed `arduino-cli`.
+Use the repository `./arduino` script for routine Arduino operations. It enters the Nix flake automatically; do not depend on globally installed tools or repeat raw CLI setup.
 
 Run commands from the repository root:
 
 ```sh
-nix develop -c arduino-cli <args>
+./arduino setup
+./arduino build
+./arduino upload
+./arduino boards
 ```
+
+For a simple build or upload request, run the corresponding script command directly. `upload` performs a clean build, detects the Mega by FQBN, uploads, and verifies it. If automatic detection is ambiguous, specify the port:
+
+```sh
+PORT=/dev/ttyACM1 ./arduino upload
+```
+
+Use `nix develop 'path:.' -c arduino-cli <args>` only for operations not exposed by the script.
 
 ## Hardware
 
