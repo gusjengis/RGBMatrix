@@ -63,24 +63,28 @@ void setup() {
 }
 
 void loop() {
+  float phase = random(0, 6284) / 1000.0;
+  float period = random(3000, 8001) / 1000.0;
+  uint8_t amplitude = random(2, 13);
+  uint8_t frameDelay = random(1, 21);
   for (int16_t x = 0; x < 96; ++x) {
     // matrix.fillScreen(matrix.Color333(0, 0, 0));
     // matrix.drawRect(x - 2, 0, 1, 32, matrix.Color333(0, 0, 0));
-    drawThing(x);
+    drawThing(x, phase, period, amplitude);
     int16_t z = x - 32;
-    int16_t y = 12 + int16_t(sin(z / 5.0) * 8.0);
+    int16_t y = 12 + int16_t(sin(z / period + phase) * amplitude);
     matrix.drawRect(z, y, 1, 6, matrix.Color333(0, 0, 0));
-    delay(1);
+    delay(frameDelay);
   }
 
-  delay(4000);
+  // delay(2000);
 }
 
-void drawThing(int16_t x) {
+void drawThing(int16_t x, float phase, float period, uint8_t amplitude) {
   // if (x >= 0 && x < 64) {
-  int16_t y = 12 + int16_t(sin(x / 5.0) * 8.0);
-  matrix.drawRect(x, y, 1, 2, matrix.Color333(1, 0, 0));
-  matrix.drawRect(x, y + 2, 1, 2, matrix.Color333(0, 1, 0));
-  matrix.drawRect(x, y + 4, 1, 2, matrix.Color333(0, 0, 1));
+  int16_t y = 12 + int16_t(sin(x / period + phase) * amplitude);
+  matrix.drawRect(x, y, 1, 2, matrix.Color333(7, 0, 0));
+  matrix.drawRect(x, y + 2, 1, 2, matrix.Color333(0, 7, 0));
+  matrix.drawRect(x, y + 4, 1, 2, matrix.Color333(0, 0, 7));
   // }
 }
